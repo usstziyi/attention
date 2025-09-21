@@ -2,8 +2,54 @@ import torch
 import math
 import collections
 from torch import nn
-from d2l import torch as d2l
 import matplotlib.pyplot as plt
+
+
+
+DATA_HUB = dict()
+DATA_URL = 'http://d2l-data.s3-accelerate.amazonaws.com/'
+
+DATA_HUB['fra-eng'] = (DATA_URL + 'fra-eng.zip', '94646ad1522d915e7b0f9296181140edcf86a4f5')
+
+import numpy as np
+import torch
+
+
+from torch import nn
+from torch.nn import functional as F
+from torch.utils import data
+
+
+
+
+#################   WARNING   ################
+# The below part is generated automatically through:
+#    d2lbook build lib
+# Don't edit it directly
+
+import collections
+import hashlib
+import math
+import os
+
+import tarfile
+import time
+import zipfile
+
+import requests
+
+from matplotlib import pyplot as plt
+
+
+
+import numpy as np
+import torch
+
+
+from torch import nn
+from torch.utils import data
+import time
+
 
 # 编码器接口
 class Encoder(nn.Module):
@@ -151,50 +197,62 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
     loss = MaskedSoftmaxCELoss(ignore_index=tgt_vocab['<pad>']) # 交叉熵损失函数，用于多分类问题
 
     # 初始化绘图
-    fig, ax, line, x_list, y_list = init_plot(lr)
+    # fig, ax, line, x_list, y_list = init_plot(lr)
 
     # 训练
     for epoch in range(num_epochs):
-        timer = d2l.Timer()
+        timer = Timer()
         # 定义累加器，用于记录每个epoch的损失总和和词元总数
-        metric = d2l.Accumulator(2)
+        metric = Accumulator(2)
         # 按照批次训练，好处是梯度下降更稳定
         for batch in data_iter:
             # 拿取批次数据
             # src_inputs(B,T)
             # tgt_inputs(B,T)
             # tgt_valid_len(B)
-            src_inputs, _, tgt_inputs, tgt_valid_len = [x.to(device) for x in batch]
+            src_inputs, _, tgt_inputs, tgt_valid_len = batch
+   
             # bos(B,1)
             bos = torch.tensor([tgt_vocab['<bos>']] * tgt_inputs.shape[0], device=device).reshape(-1, 1) # 目标输入在训练阶段需要添加<bos>标记
             # tgt_teach(B,1+T-1)->(B,T)
-            tgt_teach = torch.cat([bos, tgt_inputs[:, :-1]], 1) # 目标输入在训练阶段需要去掉最后一个词元
-            
+            tgt_teach = torch.cat([bos, tgt_inputs[:, :-1]], 1) # 目标输入在训练阶段需要去掉最后一个词元            
+
+            start_time = time.time()
+          
+
             # 1.清零梯度
             optimizer.zero_grad()
             # 2.训练，执行强制教学
             outputs, _ = net(src_inputs, tgt_teach) # outputs(B,T,D)
             # 3.计算损失
             l = loss(outputs, tgt_inputs) #压缩 T,l(B)
-            l = l.sum() # 压缩 B,l(1)
-            # 4.反向传播
+            l = l.sum() # 压缩 B,l(1)，每个批次的损失求和
+            # 4.反向传播(计算梯度最耗时)
             l.backward()
             # 5.梯度裁剪
-            d2l.grad_clipping(net, 1)
+            grad_clipping(net, 1)
             # 6.更新参数
             optimizer.step()
 
+            end_time = time.time()
+            print(f"数据移动到设备耗时: {end_time - start_time:.6f} 秒")
+
+
             # 累加批次的损失和词元数量
             with torch.no_grad():
-                metric.add(l.sum(), tgt_valid_len.sum())
+                metric.add(l, tgt_valid_len.sum())
         train_loss = metric[0] / metric[1]
         train_speed = metric[1] / timer.stop()
         print(f'epoch {(epoch + 1):3d}/{num_epochs}, loss {train_loss:.3f}, {train_speed:.1f} 词元/秒 {str(device)}')
 
+
+
         # 更新绘图
-        update_plot(epoch+1, train_loss, x_list, y_list, line, ax)
+        # update_plot(epoch+1, train_loss, x_list, y_list, line, ax)
+
+
     # 关闭绘图
-    close_plot()
+    # close_plot()
 
 
 # 初始化绘图
@@ -274,7 +332,7 @@ def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps, device, 
     # 源句子词元化,src_tokens(T,)
     src_tokens = src_vocab[source] + [src_vocab['<eos>']]
     # 源句子截断、填充,src_tokens(T,)
-    src_tokens = d2l.truncate_pad(src_tokens, num_steps, src_vocab['<pad>'])
+    src_tokens = truncate_pad(src_tokens, num_steps, src_vocab['<pad>'])
     # src_inputs(1,T)
     src_inputs = torch.unsqueeze(torch.tensor(src_tokens, dtype=torch.long, device=device), dim=0)
     pred_seq, attention_weight_seq = [], []
@@ -340,10 +398,10 @@ def main():
     # 1.超参数
     embed_size, num_hiddens, num_layers, dropout = 32, 32, 2, 0.1
     batch_size, num_steps = 64, 10
-    lr, num_epochs, device = 0.005, 300, d2l.try_gpu()
+    lr, num_epochs, device = 0.005, 300, try_gpu()
 
     # 2.加载数据集
-    train_iter, src_vocab, tgt_vocab = d2l.load_data_nmt(batch_size, num_steps)
+    train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps, device)
     
     # 3.初始化模型
     encoder = Seq2SeqEncoder(len(src_vocab), embed_size, num_hiddens, num_layers, dropout)
@@ -361,6 +419,260 @@ def main():
         translation, attention_weight_seq = predict_seq2seq(net, eng, src_vocab, tgt_vocab, num_steps, device)
         print(f'{eng} => {translation}, bleu {bleu(translation, fra, k=2):.3f}')
 
+
+
+
+
+
+
+def try_gpu(i=0):
+    if torch.cuda.device_count() >= i + 1:
+        return torch.device(f'cuda:{i}')
+    elif torch.backends.mps.is_available():
+        return torch.device('mps')
+    return torch.device('cpu')
+
+def count_corpus(tokens):
+    """Count token frequencies.
+
+    Defined in :numref:`sec_text_preprocessing`"""
+    # Here `tokens` is a 1D list or 2D list
+    if len(tokens) == 0 or isinstance(tokens[0], list):
+        # Flatten a list of token lists into a list of tokens
+        tokens = [token for line in tokens for token in line]
+    return collections.Counter(tokens)
+
+class Vocab:
+    """Vocabulary for text."""
+    def __init__(self, tokens=None, min_freq=0, reserved_tokens=None):
+        """Defined in :numref:`sec_text_preprocessing`"""
+        if tokens is None:
+            tokens = []
+        if reserved_tokens is None:
+            reserved_tokens = []
+        # Sort according to frequencies
+        counter = count_corpus(tokens)
+        self._token_freqs = sorted(counter.items(), key=lambda x: x[1],
+                                   reverse=True)
+        # The index for the unknown token is 0
+        self.idx_to_token = ['<unk>'] + reserved_tokens
+        self.token_to_idx = {token: idx
+                             for idx, token in enumerate(self.idx_to_token)}
+        for token, freq in self._token_freqs:
+            if freq < min_freq:
+                break
+            if token not in self.token_to_idx:
+                self.idx_to_token.append(token)
+                self.token_to_idx[token] = len(self.idx_to_token) - 1
+
+    def __len__(self):
+        return len(self.idx_to_token)
+
+    def __getitem__(self, tokens):
+        if not isinstance(tokens, (list, tuple)):
+            return self.token_to_idx.get(tokens, self.unk)
+        return [self.__getitem__(token) for token in tokens]
+
+    def to_tokens(self, indices):
+        if not isinstance(indices, (list, tuple)):
+            return self.idx_to_token[indices]
+        return [self.idx_to_token[index] for index in indices]
+
+    @property
+    def unk(self):  # Index for the unknown token
+        return 0
+
+    @property
+    def token_freqs(self):  # Index for the unknown token
+        return self._token_freqs
+
+def load_data_nmt(batch_size, num_steps, device, num_examples=600):
+    text = preprocess_nmt(read_data_nmt())
+    source, target = tokenize_nmt(text, num_examples)
+    src_vocab = Vocab(source, min_freq=2,
+                          reserved_tokens=['<pad>', '<bos>', '<eos>'])
+    tgt_vocab = Vocab(target, min_freq=2,
+                          reserved_tokens=['<pad>', '<bos>', '<eos>'])
+    src_array, src_valid_len = build_array_nmt(source, src_vocab, num_steps)
+    tgt_array, tgt_valid_len = build_array_nmt(target, tgt_vocab, num_steps)
+
+    # 👇 在这里将所有张量转移到目标设备
+    src_array = src_array.to(device)
+    src_valid_len = src_valid_len.to(device)
+    tgt_array = tgt_array.to(device)
+    tgt_valid_len = tgt_valid_len.to(device)
+
+    data_arrays = (src_array, src_valid_len, tgt_array, tgt_valid_len)
+    data_iter = load_array(data_arrays, batch_size)
+    return data_iter, src_vocab, tgt_vocab
+
+def load_array(data_arrays, batch_size, is_train=True):
+    dataset = data.TensorDataset(*data_arrays)
+    return data.DataLoader(dataset, batch_size, shuffle=is_train)
+
+def preprocess_nmt(text):
+    def no_space(char, prev_char):
+        return char in set(',.!?') and prev_char != ' '
+
+    # Replace non-breaking space with space, and convert uppercase letters to
+    # lowercase ones
+    text = text.replace('\u202f', ' ').replace('\xa0', ' ').lower()
+    # Insert space between words and punctuation marks
+    out = [' ' + char if i > 0 and no_space(char, text[i - 1]) else char
+           for i, char in enumerate(text)]
+    return ''.join(out)
+
+def tokenize_nmt(text, num_examples=None):
+    source, target = [], []
+    for i, line in enumerate(text.split('\n')):
+        if num_examples and i > num_examples:
+            break
+        parts = line.split('\t')
+        if len(parts) == 2:
+            source.append(parts[0].split(' '))
+            target.append(parts[1].split(' '))
+    return source, target
+
+def truncate_pad(line, num_steps, padding_token):
+    if len(line) > num_steps:
+        return line[:num_steps]  # Truncate
+    return line + [padding_token] * (num_steps - len(line))  # Pad
+
+
+def grad_clipping(net, theta):
+    if isinstance(net, nn.Module):
+        params = [p for p in net.parameters() if p.requires_grad]
+    else:
+        params = net.params
+    norm = torch.sqrt(sum(torch.sum((p.grad ** 2)) for p in params))
+    if norm > theta:
+        for param in params:
+            param.grad[:] *= theta / norm
+
+def build_array_nmt(lines, vocab, num_steps):
+    lines = [vocab[l] for l in lines]
+    lines = [l + [vocab['<eos>']] for l in lines]
+    array = torch.tensor([truncate_pad(
+        l, num_steps, vocab['<pad>']) for l in lines])
+    valid_len = reduce_sum(
+        astype(array != vocab['<pad>'], torch.int32), 1)
+    return array, valid_len
+
+def read_data_nmt():
+    data_dir = download_extract('fra-eng')
+    with open(os.path.join(data_dir, 'fra.txt'), 'r') as f:
+        return f.read()
+
+def download_extract(name, folder=None):
+    fname = download(name)
+    base_dir = os.path.dirname(fname)
+    data_dir, ext = os.path.splitext(fname)
+    if ext == '.zip':
+        fp = zipfile.ZipFile(fname, 'r')
+    elif ext in ('.tar', '.gz'):
+        fp = tarfile.open(fname, 'r')
+    else:
+        assert False, 'Only zip/tar files can be extracted.'
+    fp.extractall(base_dir)
+    return os.path.join(base_dir, folder) if folder else data_dir
+
+def download(name, cache_dir=os.path.join('..', 'data')):
+    """Download a file inserted into DATA_HUB, return the local filename.
+
+    Defined in :numref:`sec_kaggle_house`"""
+    assert name in DATA_HUB, f"{name} does not exist in {DATA_HUB}."
+    url, sha1_hash = DATA_HUB[name]
+    os.makedirs(cache_dir, exist_ok=True)
+    fname = os.path.join(cache_dir, url.split('/')[-1])
+    if os.path.exists(fname):
+        sha1 = hashlib.sha1()
+        with open(fname, 'rb') as f:
+            while True:
+                data = f.read(1048576)
+                if not data:
+                    break
+                sha1.update(data)
+        if sha1.hexdigest() == sha1_hash:
+            return fname  # Hit cache
+    print(f'Downloading {fname} from {url}...')
+    r = requests.get(url, stream=True, verify=True)
+    with open(fname, 'wb') as f:
+        f.write(r.content)
+    return fname
+
+
+class Timer:
+    """Record multiple running times."""
+    def __init__(self):
+        """Defined in :numref:`subsec_linear_model`"""
+        self.times = []
+        self.start()
+
+    def start(self):
+        """Start the timer."""
+        self.tik = time.time()
+
+    def stop(self):
+        """Stop the timer and record the time in a list."""
+        self.times.append(time.time() - self.tik)
+        return self.times[-1]
+
+    def avg(self):
+        """Return the average time."""
+        return sum(self.times) / len(self.times)
+
+    def sum(self):
+        """Return the sum of time."""
+        return sum(self.times)
+
+    def cumsum(self):
+        """Return the accumulated time."""
+        return np.array(self.times).cumsum().tolist()
+
+class Accumulator:
+    def __init__(self, n):
+        """Defined in :numref:`sec_softmax_scratch`"""
+        self.data = [0.0] * n
+
+    def add(self, *args):
+        self.data = [a + float(b) for a, b in zip(self.data, args)]
+
+    def reset(self):
+        self.data = [0.0] * len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+ones = torch.ones
+zeros = torch.zeros
+tensor = torch.tensor
+arange = torch.arange
+meshgrid = torch.meshgrid
+sin = torch.sin
+sinh = torch.sinh
+cos = torch.cos
+cosh = torch.cosh
+tanh = torch.tanh
+linspace = torch.linspace
+exp = torch.exp
+log = torch.log
+normal = torch.normal
+rand = torch.rand
+matmul = torch.matmul
+int32 = torch.int32
+float32 = torch.float32
+concat = torch.cat
+stack = torch.stack
+abs = torch.abs
+eye = torch.eye
+numpy = lambda x, *args, **kwargs: x.detach().numpy(*args, **kwargs)
+size = lambda x, *args, **kwargs: x.numel(*args, **kwargs)
+reshape = lambda x, *args, **kwargs: x.reshape(*args, **kwargs)
+to = lambda x, *args, **kwargs: x.to(*args, **kwargs)
+reduce_sum = lambda x, *args, **kwargs: x.sum(*args, **kwargs)
+argmax = lambda x, *args, **kwargs: x.argmax(*args, **kwargs)
+astype = lambda x, *args, **kwargs: x.type(*args, **kwargs)
+transpose = lambda x, *args, **kwargs: x.t(*args, **kwargs)
 
 
 if __name__ == '__main__':
