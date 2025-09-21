@@ -197,7 +197,7 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
     loss = MaskedSoftmaxCELoss(ignore_index=tgt_vocab['<pad>']) # 交叉熵损失函数，用于多分类问题
 
     # 初始化绘图
-    # fig, ax, line, x_list, y_list = init_plot(lr)
+    fig, ax, line, x_list, y_list = init_plot(lr)
 
     # 训练
     for epoch in range(num_epochs):
@@ -217,7 +217,7 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             # tgt_teach(B,1+T-1)->(B,T)
             tgt_teach = torch.cat([bos, tgt_inputs[:, :-1]], 1) # 目标输入在训练阶段需要去掉最后一个词元            
 
-            start_time = time.time()
+            # start_time = time.time()
           
 
             # 1.清零梯度
@@ -234,8 +234,8 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             # 6.更新参数
             optimizer.step()
 
-            end_time = time.time()
-            print(f"数据移动到设备耗时: {end_time - start_time:.6f} 秒")
+            # end_time = time.time()
+            # print(f"数据移动到设备耗时: {end_time - start_time:.6f} 秒")
 
 
             # 累加批次的损失和词元数量
@@ -248,11 +248,11 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
 
 
         # 更新绘图
-        # update_plot(epoch+1, train_loss, x_list, y_list, line, ax)
+        update_plot(epoch+1, train_loss, x_list, y_list, line, ax)
 
 
     # 关闭绘图
-    # close_plot()
+    close_plot()
 
 
 # 初始化绘图
@@ -399,6 +399,7 @@ def main():
     embed_size, num_hiddens, num_layers, dropout = 32, 32, 2, 0.1
     batch_size, num_steps = 64, 10
     lr, num_epochs, device = 0.005, 300, try_gpu()
+    print(device)
 
     # 2.加载数据集
     train_iter, src_vocab, tgt_vocab = load_data_nmt(batch_size, num_steps, device)
@@ -560,7 +561,7 @@ def build_array_nmt(lines, vocab, num_steps):
 
 def read_data_nmt():
     data_dir = download_extract('fra-eng')
-    with open(os.path.join(data_dir, 'fra.txt'), 'r') as f:
+    with open(os.path.join(data_dir, 'fra.txt'), 'r', encoding='utf-8') as f:
         return f.read()
 
 def download_extract(name, folder=None):
