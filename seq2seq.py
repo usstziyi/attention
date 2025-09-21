@@ -211,6 +211,10 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             # tgt_inputs(B,T)
             # tgt_valid_len(B)
             src_inputs, _, tgt_inputs, tgt_valid_len = batch
+            # 数据移动到设备
+            src_inputs = src_inputs.to(device)
+            tgt_inputs = tgt_inputs.to(device)
+            tgt_valid_len = tgt_valid_len.to(device)
    
             # bos(B,1)
             bos = torch.tensor([tgt_vocab['<bos>']] * tgt_inputs.shape[0], device=device).reshape(-1, 1) # 目标输入在训练阶段需要添加<bos>标记
@@ -497,11 +501,11 @@ def load_data_nmt(batch_size, num_steps, device, num_examples=600):
     src_array, src_valid_len = build_array_nmt(source, src_vocab, num_steps)
     tgt_array, tgt_valid_len = build_array_nmt(target, tgt_vocab, num_steps)
 
-    # 👇 在这里将所有张量转移到目标设备
-    src_array = src_array.to(device)
-    src_valid_len = src_valid_len.to(device)
-    tgt_array = tgt_array.to(device)
-    tgt_valid_len = tgt_valid_len.to(device)
+    # # 👇 在这里将所有张量转移到目标设备
+    # src_array = src_array.to(device)
+    # src_valid_len = src_valid_len.to(device)
+    # tgt_array = tgt_array.to(device)
+    # tgt_valid_len = tgt_valid_len.to(device)
 
     data_arrays = (src_array, src_valid_len, tgt_array, tgt_valid_len)
     data_iter = load_array(data_arrays, batch_size)
