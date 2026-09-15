@@ -39,7 +39,7 @@ class ScaledDotProductAttention(nn.Module):
 
         # 2. 可选：掩码（例如 padding mask 或 causal mask）
         if mask is not None:
-            scores = scores.masked_fill(mask == 0, float('-inf'))
+            scores = scores.masked_fill(~mask, float('-inf'))
 
         # 3. softmax 得到注意力权重
         attn = F.softmax(scores, dim=-1)  # (B, T, T)
@@ -60,8 +60,16 @@ if __name__ == "__main__":
     x = torch.randn(batch_size, seq_len, d_model)  # 模拟 EEG 电极通道特征
 
     # 因果掩码（causal mask）：位置 i 只能关注 j <= i，未来位置 j > i 被屏蔽
-    # torch.tril 保留下三角（含对角线）为 1，其余为 0，与 forward 里 "0 表示屏蔽" 的约定一致
-    causal_mask = torch.tril(torch.ones(seq_len, seq_len))  # (T, T)，可广播到 (B, T, T)
+    # torch.tril 保留下三角（含对角线）为 True，其余为 False，与 forward 里 "True 表示屏蔽" 的约定一致
+    causal_mask = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool)) # (T, T)，可广播到 (B, T, T)
+    print(causal_mask)
+    """
+    tensor([[ True, False, False, False, False],
+            [ True,  True, False, False, False],
+            [ True,  True,  True, False, False],
+            [ True,  True,  True,  True, False],
+            [ True,  True,  True,  True,  True]])
+    """
 
     attn_layer = ScaledDotProductAttention(d_model)
     out, attn_weights = attn_layer(x, mask=causal_mask)

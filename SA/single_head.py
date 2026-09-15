@@ -23,10 +23,16 @@ class SingleHeadSelfAttention(nn.Module):
         if is_causal:
             T = x.size(1)
             # nn.MultiheadAttention 的约定：bool 张量里 True 表示"不允许关注"，所以上三角置 True
-            attn_mask = torch.triu(
-                torch.ones(T, T, dtype=torch.bool, device=x.device), diagonal=1
-            )
-            print("因果掩码:", attn_mask)
+            attn_mask = torch.triu(torch.ones(T, T, dtype=torch.bool, device=x.device), diagonal=1)
+            print(attn_mask)
+            
+            """
+            tensor([[False,  True,  True,  True,  True],
+                    [False, False,  True,  True,  True],
+                    [False, False, False,  True,  True],
+                    [False, False, False, False,  True],
+                    [False, False, False, False, False]])
+            """
 
         # 自注意力：Q = K = V = x
         out, attn_weights = self.attn(

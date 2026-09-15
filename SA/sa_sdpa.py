@@ -8,7 +8,8 @@
 注意: SDPA 只返回输出, 不返回注意力权重。
 需要权重可视化时用 need_attn=True 额外算一份 (仅用于观察, 不参与梯度)。
 
-因果屏蔽用 is_causal=True, 不手写 mask 张量。
+掩码使用显式 attn_mask 传入, 走 SDPA 的 bool 语义: True 表示参与注意力,
+形状需可广播到 (B, T, T); 传 None 表示不屏蔽任何位置。
 """
 
 import math
@@ -41,28 +42,26 @@ class ScaledDotProductAttentionSDPA(nn.Module):
         # 缩放因子 1/sqrt(d_k), 只在手动算注意力权重时用到
         self.scale = 1.0 / math.sqrt(self.d_k)
 
-    def forward(self, x, is_causal=False, need_attn=False):
+    def forward(self, x, attn_mask=None, need_attn=False):
         # x: (B, T, d_model)
+        # attn_mask: bool 张量, True 表示参与注意力, 可广播到 (B, T, T); None 表示不屏蔽
         Q = self.W_q(x)   # (B, T, d_k)
         K = self.W_k(x)   # (B, T, d_k)
         V = self.W_v(x)   # (B, T, d_v)
 
-        # 1. 内置算子一次完成 QK^T/sqrt(d_k) -> softmax -> @V
-        #    is_causal=True 会内置一个下三角因果 mask
+        # 1. 内置算子一次完成 QK^T/sqrt(d_k) -> mask -> softmax -> @V
+        #    bool mask 会被内部转成 0/-inf 的加性 bias, 在 softmax 之前应用
         out = F.scaled_dot_product_attention(
             Q, K, V,
-            is_causal=is_causal,
+            attn_mask=attn_mask,
         )  # (B, T, d_v)
 
-        # 2. 可选: 额外算一份注意力权重, 仅用于观察/画图
+        # 2. 可选: 额外算一份注意力权重, 仅用于观察/画图 (复用同一个 attn_mask)
         attn = None
         if need_attn:
             scores = torch.matmul(Q, K.transpose(-2, -1)) * self.scale  # (B, T, T)
-            if is_causal:
-                T_q, T_k = scores.shape[-2:]
-                causal = torch.ones(T_q, T_k, dtype=torch.bool).tril(diagonal=T_k - T_q)
-                print(causal)
-                scores = scores.masked_fill(~causal, float('-inf'))
+            if attn_mask is not None:
+                scores = scores.masked_fill(~attn_mask, float('-inf'))
             attn = F.softmax(scores, dim=-1)  # (B, T, T)
 
         return out, attn
@@ -79,9 +78,21 @@ if __name__ == "__main__":
     x = torch.randn(batch_size, seq_len, d_model)  # 模拟 EEG 电极通道特征
 
     # 因果掩码（causal mask）：位置 i 只能关注 j <= i，未来位置 j > i 被屏蔽
-    # 不再手写 torch.tril，直接交给 SDPA 的 is_causal=True
+    # 手写 bool 掩码: True 表示参与注意力（SDPA 的约定, 与 sa.py 里 "True 表示屏蔽" 相反）
+    causal_mask = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool), diagonal=0)
+    print(causal_mask)
+
+    """
+    tensor([[ True, False, False, False, False],
+            [ True,  True, False, False, False],
+            [ True,  True,  True, False, False],
+            [ True,  True,  True,  True, False],
+            [ True,  True,  True,  True,  True]])
+    """
+
+
     attn_layer = ScaledDotProductAttentionSDPA(d_model)
-    out, attn_weights = attn_layer(x, is_causal=True, need_attn=True)
+    out, attn_weights = attn_layer(x, attn_mask=causal_mask, need_attn=True)
 
     print("输入形状: ", x.shape)               # (2, 5, 8)
     print("输出形状: ", out.shape)             # (2, 5, 8)
