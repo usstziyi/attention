@@ -4,29 +4,34 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
 """
-SDPA（Self-Attention with Positional Embedding） 缩放点积注意力掩码: True表示保留，False表示屏蔽
+SDPA（Self-Attention with Positional Embedding） 缩放点积注意力掩码: True表示可看，False表示不可看
 """
 
 
 def main():
-    # diagonal=0：保留主对角线及其以下元素
+    # 此保留是矩阵本身的概念，不是因果掩码的保留
+    # j<=i:保留主对角线及其以下元素,其余置为False
     mask_0 = torch.tril(torch.ones(5, 5, dtype=torch.bool), diagonal=0)
 
-    # diagonal=1：保留主对角线上方第一条对角线及其以下
+    # j<=i+1;保留主对角线右边第一条对角线及其以下,其余置为False
     mask_1 = torch.tril(torch.ones(5, 5, dtype=torch.bool), diagonal=1)
 
-    # diagonal=-1：保留主对角线下方第一条对角线及其以下（不含主对角线）
+    # j<=i-1;保留主对角线左方第一条对角线及其以下,其余置为False
     mask_neg1 = torch.tril(torch.ones(5, 5, dtype=torch.bool), diagonal=-1)
 
-    # 保留主对角线及上下各 1 条对角线（三对角带状掩码）
+    # 全True矩阵
     mask_tri = torch.ones(5, 5, dtype=torch.bool)
-    mask_tri = torch.tril(mask_tri, diagonal=-1) & torch.tril(mask_tri, diagonal=1)
+    # j<=i，保留主对角线及其以下元素,其余置为False
+    mask_tri = torch.tril(mask_tri, diagonal=0)
+    # j>=i-2，保留主对角线左方第二条对角线及其以上,其余置为False
+    mask_tri = torch.triu(mask_tri, diagonal=-2)
+
 
     masks = [
-        ("diagonal=0", mask_0),
-        ("diagonal=1", mask_1),
-        ("diagonal=-1", mask_neg1),
-        ("diagonal=±1,0", mask_tri),
+        ("can see step[0,i]", mask_0), # 看到自身及以前的信息
+        ("can see step[0,i+1]", mask_1), # 提前看到自身后一步的信息
+        ("can see step[0,i-1]", mask_neg1), # 看到自身前一步的信息
+        ("can see step[i-2,i]", mask_tri), # 只能看到自身及前两步的信息
     ]
 
     for name, m in masks:

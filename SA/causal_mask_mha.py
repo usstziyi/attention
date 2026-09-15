@@ -4,29 +4,37 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
 """
-MHA（Multi-Head Attention） 多头自注意力掩码: True表示屏蔽，False表示保留
+MHA（Multi-Head Attention） 多头自注意力掩码: False表示可看，True表示不可看
 """
 
 
 def main():
-    # diagonal=0：保留主对角线及其以上元素
-    mask_0 = torch.triu(torch.ones(5, 5, dtype=torch.bool), diagonal=0)
-
-    # diagonal=1：保留主对角线上方第一条对角线及其以上（不含主对角线）
+    # 此保留是矩阵本身的概念，不是因果掩码的保留
+    # j>=i+1;保留主对角线右边第一条对角线及其以上（不含主对角线）,其余置为False
     mask_1 = torch.triu(torch.ones(5, 5, dtype=torch.bool), diagonal=1)
 
-    # diagonal=-1：保留主对角线下方第一条对角线及其以上
+    # j>=i+0;保留主对角线及其以上元素,其余置为False
+    mask_0 = torch.triu(torch.ones(5, 5, dtype=torch.bool), diagonal=0)
+
+    # j>=i-1;保留主对角线左方第一条对角线及其以上,其余置为False
     mask_neg1 = torch.triu(torch.ones(5, 5, dtype=torch.bool), diagonal=-1)
 
-    # 保留主对角线及上下各 1 条对角线（三对角带状掩码）
+    # 全True矩阵
     mask_tri = torch.ones(5, 5, dtype=torch.bool)
-    mask_tri = torch.triu(mask_tri, diagonal=-1) & torch.tril(mask_tri, diagonal=1)
+    # j>=i-2，保留主对角线左方第二条对角线及其以上,其余置为False
+    mask_tri = torch.triu(mask_tri, diagonal=-2)
+    # j<=i+0，保留主对角线及其以下元素,其余置为False
+    mask_tri = torch.tril(mask_tri, diagonal=0)
+    # 取反
+    mask_tri = ~mask_tri
+
+
 
     masks = [
-        ("diagonal=0", mask_0),
         ("diagonal=1", mask_1),
+        ("diagonal=0", mask_0),
         ("diagonal=-1", mask_neg1),
-        ("diagonal=±1,0", mask_tri),
+        ("diagonal=-2,0", mask_tri),
     ]
 
     for name, m in masks:
