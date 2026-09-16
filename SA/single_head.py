@@ -17,10 +17,11 @@ class SingleHeadSelfAttention(nn.Module):
             batch_first=batch_first,   # 输入形状为 (batch, seq_len, embed_dim)
         )
 
-    def forward(self, x, need_weights=False, is_causal=False):
+    def forward(self, x, need_weights=False):
         # 因果掩码：位置 i 只能关注 j <= i，未来位置 j > i 被屏蔽
         attn_mask = None
-        if is_causal:
+        # 只有在需要注意力权重时才手动创建掩码
+        if need_weights:
             T = x.size(1)
             # nn.MultiheadAttention 的约定：bool 张量里 True 表示"不允许关注"，所以上三角置 True
             attn_mask = torch.triu(torch.ones(T, T, dtype=torch.bool, device=x.device), diagonal=1)
@@ -40,7 +41,6 @@ class SingleHeadSelfAttention(nn.Module):
             key=x,
             value=x,
             attn_mask=attn_mask,
-            is_causal=is_causal,
             need_weights=need_weights,
         )
         return out, attn_weights
@@ -58,8 +58,8 @@ if __name__ == "__main__":
 
     model = SingleHeadSelfAttention(embed_dim=embed_dim, batch_first=True)
 
-    # 前向传播，顺便拿到注意力权重（is_causal=True 时只用下三角，看不到未来位置）
-    out, attn_weights = model(x, need_weights=True, is_causal=True)
+    # 前向传播，顺便拿到注意力权重
+    out, attn_weights = model(x, need_weights=True)
 
     print("输入 x 形状:      ", x.shape)              # (2, 5, 8)
     print("输出 out 形状:    ", out.shape)            # (2, 5, 8)
