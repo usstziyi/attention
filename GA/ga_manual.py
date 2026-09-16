@@ -24,40 +24,50 @@ class SingleHeadGATLayer(nn.Module):
         edge_index: 边列表, shape: [2, E], 每一列是 (源节点, 目标节点)
         """
         # h(4,3)
-        N = h.shape[0] # 节点数量=4
+        N = h.shape[0]          # 节点数量=4
+        E = edge_index.shape[1] # 边数量=6
+        src_node_index = edge_index[0]    # 源节点索引:[0,0,1,1,2,3]
+        tgt_node_index = edge_index[1]    # 目标节点索引:[1,2,0,2,3,0]
         
         # Step 1: 线性变换 (所有节点并行)
-        # Wh: [N, out_features]
+        # h(4,3)
         # Wh(4,5)
         Wh = self.W(h)
-        
-        # Step 2: 边缘并行 (Edge Parallelism) - 计算注意力分数
-        # 提取每条边的源节点和目标节点特征
-        # edge_index[0] 是源节点索引:[0,0,1,1,2,3]
-        # edge_index[1] 是目标节点索引:[1,2,0,2,3,0]
-        edge_h_src = Wh[edge_index[0]]  # [E, out_features]
-        edge_h_dst = Wh[edge_index[1]]  # [E, out_features]
-        
-        # 拼接: [E, 2 * out_features]
-        edge_h_cat = torch.cat([edge_h_src, edge_h_dst], dim=1)
         """
-        edge_h_cat[e] = [ src_0, src_1, src_2, src_3, src_4, dst_0, dst_1, dst_2, dst_3, dst_4 ]
-                  └────────── edge_h_src ──────────┘  └────────── edge_h_dst ────────────────┘
+        四个节点的特征表示
+        Wh[0] = [ft_0, ft_1, ft_2, ft_3, ft_4]
+        Wh[1] = [ft_0, ft_1, ft_2, ft_3, ft_4]
+        Wh[2] = [ft_0, ft_1, ft_2, ft_3, ft_4]
+        Wh[3] = [ft_0, ft_1, ft_2, ft_3, ft_4]
         """
         
-        # 计算未归一化的注意力分数 e_ij: [E, 1]
-        # 对应公式: e_ij = LeakyReLU(a^T [Wh_i || Wh_j])
-        e = self.leakyrelu(torch.matmul(edge_h_cat, self.a)).squeeze(1) # [E]
-        # `e` 是 每条边一个的「未归一化注意力分数」 ，形状`[E]` 。
-        # 它是 softmax 之前的 原始 logit ，还不是最终的注意力权重。
-        # 「源节点的特征」对「目标节点」来说有多重要 的原始打分。
+        # Step 2: 拼接目标节点特征和源节点特征
+        Wh_i = Wh[tgt_node_index]  # [6, 5]
+        Wh_j = Wh[src_node_index]  # [6, 5]
+        
+        # Wh_i || Wh_j
+        edge_h_cat = torch.cat([Wh_i, Wh_j], dim=1) # [6, 10]
         """
-        e[0]  -> 对应边 0->1 的分数logit
-        e[1]  -> 对应边 0->2 的分数logit
-        e[2]  -> 对应边 1->0 的分数logit
-        e[3]  -> 对应边 1->2 的分数logit
-        e[4]  -> 对应边 2->3 的分数logit
-        e[5]  -> 对应边 3->0 的分数logit
+        edge_h_cat[0] = [ft_0, ft_1, ft_2, ft_3, ft_4, ft_0, ft_1, ft_2, ft_3, ft_4]  # (i,j):(1,0)
+        edge_h_cat[1] = [ft_0, ft_1, ft_2, ft_3, ft_4, ft_0, ft_1, ft_2, ft_3, ft_4]  # (i,j):(2,0)
+        edge_h_cat[2] = [ft_0, ft_1, ft_2, ft_3, ft_4, ft_0, ft_1, ft_2, ft_3, ft_4]  # (i,j):(0,1)
+        edge_h_cat[3] = [ft_0, ft_1, ft_2, ft_3, ft_4, ft_0, ft_1, ft_2, ft_3, ft_4]  # (i,j):(2,1)
+        edge_h_cat[4] = [ft_0, ft_1, ft_2, ft_3, ft_4, ft_0, ft_1, ft_2, ft_3, ft_4]  # (i,j):(3,2)
+        edge_h_cat[5] = [ft_0, ft_1, ft_2, ft_3, ft_4, ft_0, ft_1, ft_2, ft_3, ft_4]  # (i,j):(0,3)
+                         └──────── Wh_i ──────────┘    └──────── Wh_j────────────┘
+
+        self.a = [w_0, w_1, w_2, w_3, w_4, w_5, w_6, w_7, w_8, w_9]
+        """
+        
+        # 计算注意力logits: e_ij = LeakyReLU(a^T [Wh_i || Wh_j])
+        e = self.leakyrelu(torch.matmul(edge_h_cat, self.a)).squeeze(1) # [E,1]->[E]
+        """
+        e[0]  -> note1 给note0打的分数logit
+        e[1]  -> note2 给note0打的分数logit
+        e[2]  -> note0 给note1打的分数logit
+        e[3]  -> note2 给note1打的分数logit
+        e[4]  -> note3 给note2打的分数logit
+        e[5]  -> note0 给note3打的分数logit
         """
         
         # Step 3: 分段 Softmax (Segment Softmax) - 按目标节点归一化
@@ -66,17 +76,12 @@ class SingleHeadGATLayer(nn.Module):
         
         # 减去最大值防止溢出 (数值稳定性)
         # 创建一个极小的初始张量来存储每个节点的最大分数
-        # N: 节点数量, 例如4
+        # max_e:(N,)
         max_e = torch.full((N,), -1e9, dtype=e.dtype, device=e.device)
-        # 遍历每条边 k，把`e[k]` 写到输出张量的`index[k]` 号槽位；
-        # 如果该槽位已被写过（多条边指向同一节点），就用`amax` 保留更大的那个。
-        # 输出形状是`[N]` ，即每个节点一个“最大入边分数”。
-        # src:e[0] e[1] e[2] e[3] e[4] e[5]
-        # dst:edge_index[1]:[1,2,0,2,3,0]
-        # out:max_e[0] max_e[1] max_e[2] max_e[3]
+        # 分发，分组求最大值
         max_e = max_e.scatter_reduce(
             dim = 0,
-            index = edge_index[1],
+            index = tgt_node_index, # (1,2,0,2,3,0)
             src = e,
             reduce='amax'
         )
@@ -124,16 +129,16 @@ class SingleHeadGATLayer(nn.Module):
         """
         
         # 计算最终的注意力系数 alpha_ij: [E]
-        alpha = exp_e / (sum_exp[edge_index[1]] + 1e-10) # 加极小值防除零
+        alpha = exp_e / (sum_exp[tgt_node_index] + 1e-10) # 加极小值防除零
         
         # Step 4: 聚合 (Aggregation) - 稀疏矩阵乘法
         # 将注意力系数乘到源节点特征上
         # Wh:(4,5)
-        # Wh[edge_index[0]]:(6,5)
+        # Wh[src_node_index]:(6,5)
         # alpha 需要扩展维度以匹配特征维度: [E, 1]
         # 广播机制 ：[E, F'] * [E, 1] -> [E, F']
         # 这行是把注意力权重“贴”到源节点特征上 ，生成每条边的“消息”（message）
-        weighted_features = Wh[edge_index[0]] * alpha.unsqueeze(1) # [E, out_features]
+        weighted_features = Wh[src_node_index] * alpha.unsqueeze(1) # [E, out_features] 
         # weighted_features = edge_h_src * alpha.unsqueeze(1)
         # 为什么乘的是源节点而不是目标节点 ：这是消息传递（message passing）的标准约定——“节点 i 从邻居 j 那里收到消息，消息内容取自 j 的特征，强度由`alpha_ij` 决定”。
         # `alpha` 回答的是「源 j 对目标 i 有多重要」，所以被加权的是 源 的特征。
@@ -143,7 +148,7 @@ class SingleHeadGATLayer(nn.Module):
         out_features = torch.zeros(N, Wh.shape[1], dtype=Wh.dtype, device=Wh.device)
         out_features = out_features.scatter_add(
             dim = 0, 
-            index = edge_index[1].unsqueeze(1).expand(-1, Wh.shape[1]), 
+            index = tgt_node_index.unsqueeze(1).expand(-1, Wh.shape[1]), 
             src = weighted_features
         )
 
@@ -168,7 +173,7 @@ if __name__ == "__main__":
     
     # 随机生成节点特征(4,3)
     h = torch.randn(N, in_features)
-    
+
     # 定义边列表 (源节点 -> 目标节点)
     # 0->1, 0->2, 1->0, 1->2, 2->3, 3->0
     # 注意：GAT 通常建议包含自环 (Self-loop)，这里为了演示简化，暂不加
@@ -177,16 +182,22 @@ if __name__ == "__main__":
         [1, 2, 0, 2, 3, 0]   # 目标节点
     ], dtype=torch.long)
     
+    print("输入节点特征:")
+    print(h)
     print(f"输入节点特征维度: {h.shape}")
     print(f"边数量: {edge_index.shape[1]}")
 
     
     # 2. 实例化 GAT 层
-    gat_layer = SingleHeadGATLayer(in_features, out_features)
+    single_gat_model = SingleHeadGATLayer(in_features, out_features)
     
     with torch.no_grad():
         # 3. 前向传播
-        output = gat_layer(h, edge_index)
+        # 3. 前向传播
+        # h: (4, 3)
+        # edge_index: (2, 6)
+        # output: (4, 5)
+        output = single_gat_model(h, edge_index)
     
     print(f"\n输出节点特征维度: {output.shape}")
     print("输出所有节点特征:")
