@@ -1,5 +1,12 @@
 # torch.scatter_reduce_ 与 torch.gather
 
+## scatter和gather操作的本质
+ - index、src这两个张量的shape必须相同
+ - out的dim维度独立(属于归属维度)，其他维度和src保持一致
+ - index是路由
+ - src里的每个元素，经过index，路由到out对应的位置
+ - 路由发生在dim维度，其他维度out和src保持一致
+
 整理自 DeepSeek 对话：https://chat.deepseek.com/share/ucunj05kwki9syg8cd
 
 ---
