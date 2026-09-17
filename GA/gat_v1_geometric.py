@@ -44,7 +44,11 @@ def main():
     ], dtype=torch.long)
 
     # 封装成 PyG 的 Data 对象
-    data = Data(x=x, edge_index=edge_index)
+    data = Data(
+        x=x,                   # 节点特征矩阵，形状为 (4, 3)，4个节点，每个节点3个特征维度
+        edge_index=edge_index  # 边索引 (COO 格式)，形状为 (2, 6)，2行分别表示源节点和目标节点，共6条边
+    )
+    # COO = Coordinate format（坐标格式） ，是一种 稀疏矩阵 的存法
 
 
     model = GAT(in_channels=3, hidden_channels=8, out_channels=5, heads=4)
