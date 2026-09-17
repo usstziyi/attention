@@ -3,24 +3,6 @@ import torch.nn.functional as F
 from torch_geometric.nn import GATConv
 from torch_geometric.data import Data
 
-# ================= 1. 构造图数据 =================
-# 使用 PyG 的 Data 对象来管理图数据
-# 节点特征: 4 个节点，每个节点 3 维特征
-x = torch.randn(4, 3)
-
-# 边列表: 和之前一样 (源节点 -> 目标节点)
-edge_index = torch.tensor([
-    [0, 0, 1, 1, 2, 3],  # 源节点
-    [1, 2, 0, 2, 3, 0]   # 目标节点
-], dtype=torch.long)
-
-# 封装成 PyG 的 Data 对象
-data = Data(x=x, edge_index=edge_index)
-
-print(f"节点特征维度: {data.x.shape}")
-print(f"边数量: {data.edge_index.shape[1]}")
-
-# ================= 2. 定义 GAT 模型 =================
 class GAT(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, heads=4):
         super().__init__()
@@ -33,7 +15,8 @@ class GAT(torch.nn.Module):
         # 因为`GATConv` 默认`concat=False` ，会把 1 个头的结果 取平均。
         self.conv2 = GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=0.6)
 
-    def forward(self, x, edge_index):
+    def forward(self, data):
+        x, edge_index = data.x, data.edge_index
         # 第一层 + ELU 激活
         # x: (4, 3)
         # edge_index: (2, 6)
@@ -48,19 +31,36 @@ class GAT(torch.nn.Module):
         x = self.conv2(x, edge_index)
         return x # (4, 5)
 
-# ================= 3. 前向传播 =================
-model = GAT(in_channels=3, hidden_channels=8, out_channels=5, heads=4)
-model.eval()  # 关闭 dropout，方便查看结果
 
-with torch.no_grad():
 
-    # data.x: (4, 3)
-    # data.edge_index: (2, 6)
-    # output: (4, 5)
-    output = model(data.x, data.edge_index)
+def main():
+    # 节点
+    x = torch.randn(4, 3)
 
-print("输入节点特征:")
-print(x)
-print(f"\n输出节点特征维度: {output.shape}")
-print("输出所有节点特征:")
-print(output)
+    # 边列表: (源节点 -> 目标节点)
+    edge_index = torch.tensor([
+        [0, 0, 1, 1, 2, 3],  # 源节点
+        [1, 2, 0, 2, 3, 0]   # 目标节点
+    ], dtype=torch.long)
+
+    # 封装成 PyG 的 Data 对象
+    data = Data(x=x, edge_index=edge_index)
+
+
+    model = GAT(in_channels=3, hidden_channels=8, out_channels=5, heads=4)
+    model.eval()  # 关闭 dropout，方便查看结果
+
+    with torch.no_grad():
+
+        # data.x: (4, 3)
+        # data.edge_index: (2, 6)
+        # output: (4, 5)
+        output = model(data)
+
+    print("输入节点特征:")
+    print(x)
+    print("输出所有节点特征:")
+    print(output)
+
+if __name__ == "__main__":
+    main()
