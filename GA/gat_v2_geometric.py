@@ -1,14 +1,14 @@
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv
+from torch_geometric.nn import GATv2Conv
 from torch_geometric.data import Data
 
 
-class GAT(torch.nn.Module):
+class GATv2(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, heads=4, add_self_loops=True):
         super().__init__()
-        self.conv1 = GATConv(in_channels, hidden_channels, heads=heads, dropout=0.6, add_self_loops=add_self_loops)
-        self.conv2 = GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=0.6, add_self_loops=add_self_loops)
+        self.conv1 = GATv2Conv(in_channels, hidden_channels, heads=heads, dropout=0.6, add_self_loops=add_self_loops)
+        self.conv2 = GATv2Conv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=0.6, add_self_loops=add_self_loops)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
@@ -32,7 +32,7 @@ def main():
         edge_index=edge_index
     )
 
-    model = GAT(in_channels=3, hidden_channels=8, out_channels=5, heads=4, add_self_loops=False)
+    model = GATv2(in_channels=3, hidden_channels=8, out_channels=5, heads=4, add_self_loops=False)
     model.eval()
 
     with torch.no_grad():
