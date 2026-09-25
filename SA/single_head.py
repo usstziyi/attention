@@ -69,6 +69,7 @@ if __name__ == "__main__":
     print("注意力权重行和:   ", attn_weights.sum(dim=-1))
 
     # 检查因果掩码是否生效：上三角（未来位置）权重应全为 0
+    # diagonal 决定了从哪条对角线开始保留，1 表示从对角线右方开始
     upper = torch.triu(attn_weights, diagonal=1)
     print("上三角(未来位置)最大权重:", upper.abs().max().item())
 
