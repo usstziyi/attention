@@ -42,7 +42,7 @@ def single_head_self_attention_with_pad_and_causal_mask(x, pad_mask):
 
     # 合并 mask: key 方向屏蔽 OR 因果屏蔽, 广播后形状 (B, L, L)
     combined_mask = key_mask | causal_mask.unsqueeze(0)
-    scores_masked = scores.masked_fill(combined_mask, float('-inf'))
+    scores_masked = scores.masked_fill(combined_mask, float('-inf'))  # 清除列中的padding
 
     # softmax 得到注意力权重
     attn_weights = torch.softmax(scores_masked, dim=-1)   # (B, L, L)
@@ -52,7 +52,7 @@ def single_head_self_attention_with_pad_and_causal_mask(x, pad_mask):
 
     # query_mask: 清零 padding 作为 query 的行, 形状 (B, L, 1)
     query_mask = pad_mask.unsqueeze(-1)
-    attn_weights = attn_weights * query_mask
+    attn_weights = attn_weights * query_mask                          # 清除行中的padding
 
     # 加权求和
     output = attn_weights @ V                           # (B, L, d_v)
